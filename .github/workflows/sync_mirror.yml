@@ -1,0 +1,67 @@
+name: Sync from LoopWorkspace
+run-name: Sync from LoopWorkspace
+on:
+  schedule:
+    - cron: "0 */6 * * *" # Every 6 hours
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Only run on the mirror repo itself, not on user forks
+    if: github.repository == 'TaylorJPatterson/Loop-AllFeatures'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync from LoopWorkspace feat/AllFeatures
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/TaylorJPatterson/LoopWorkspace.git
+          git fetch upstream feat/AllFeatures
+
+          # Check if upstream has changed (compare trees, not commits — handles force-pushes)
+          LOCAL_TREE=$(git rev-parse HEAD^{tree} 2>/dev/null || echo "none")
+          REMOTE_TREE=$(git rev-parse upstream/feat/AllFeatures^{tree} 2>/dev/null || echo "none")
+
+          # Try a normal merge first
+          if git merge upstream/feat/AllFeatures --no-edit 2>/dev/null; then
+            # Check if anything actually changed
+            if [ "$(git rev-parse HEAD^{tree})" = "$LOCAL_TREE" ]; then
+              echo "Already up to date."
+              exit 0
+            fi
+            git push origin main
+            echo "Synced via merge."
+            exit 0
+          fi
+
+          # Merge failed (likely force-push or submodule conflict) — reset and re-apply workflow files
+          echo "Merge failed — falling back to reset + restore workflow files."
+          git merge --abort 2>/dev/null || true
+
+          # Save mirror-specific workflow files
+          TMPDIR=$(mktemp -d)
+          cp -r .github/workflows "$TMPDIR/"
+
+          # Reset to upstream
+          git reset --hard upstream/feat/AllFeatures
+
+          # Restore workflow files
+          mkdir -p .github/workflows
+          cp "$TMPDIR/workflows/"* .github/workflows/
+
+          # Commit restored workflow files if they differ
+          if ! git diff --quiet .github/workflows; then
+            git add .github/workflows
+            git commit -m "Restore mirror workflow files after upstream sync"
+          fi
+
+          git push origin main --force-with-lease
+          echo "Synced via reset (upstream was force-pushed)."
