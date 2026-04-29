@@ -174,8 +174,11 @@ jobs:
         (vars.SCHEDULED_BUILD != 'false' && needs.check_status.outputs.IS_SECOND_IN_MONTH == 'true') ||
         (vars.SCHEDULED_SYNC != 'false' && needs.check_status.outputs.NEW_COMMITS == 'true' )
     steps:
+      - name: List installed Xcodes
+        run: ls /Applications
+        
       - name: Select Xcode version
-        run: "sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer"
+        run: "sudo xcode-select --switch /Applications/Xcode_26.app/Contents/Developer"
 
       - name: Checkout Repo for building
         uses: actions/checkout@v4
